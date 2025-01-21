@@ -1,90 +1,35 @@
-// app.js
-const WebSocket = require("ws");
-const express = require("express");
+const express = require('express');
+const http = require('http');
+const WebSocket = require('ws');
 
-// Create an Express application
 const app = express();
-
-// Create an HTTP server to host your Express app (optional for static files)
-const server = require("http").createServer(app);
-
-// Create a WebSocket server attached to the HTTP server
+const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
-let gameData = {};
-let unitData = []; // List to store headset information
 
-// Function to find or update headset data
-function updateUnitData(serialNo, batteryLevel) {
-  // Check if the headset with the given serial number already exists
-  const existingUnit = unitData.find(unit => unit.headsetSerialNo === serialNo);
+const connections = new Map();
 
-  if (existingUnit) {
-    // Update the existing headset's battery level
-    existingUnit.battery = batteryLevel;
-  } else {
-    // Add new headset data if not found
-    unitData.push({ headsetSerialNo: serialNo, battery: batteryLevel });
-  }
+wss.on('connection', (ws, req) => {
+    const route = req.url.slice(1); 
+    console.log(`WebSocket connection established for route: ${route}`);
 
-  console.log("Updated unit data:", unitData);
-}
-
-// Handle WebSocket connections
-wss.on("connection", (ws) => {
-  console.log("A user connected");
-
-  // Send a welcome message and the current game data or null if not set
-  ws.send("Welcome to the WebSocket server!");
-  ws.send(JSON.stringify(gameData));
-  // ws.send(JSON.stringify(unitData)); // Send the current unit data to the client
-
-  // Handle incoming messages from the client
-  ws.on("message", (message) => {
-    // If the message is a Buffer (binary), convert it to a string
-    if (Buffer.isBuffer(message)) {
-      message = message.toString("utf-8"); // Convert Buffer to string (UTF-8)
+    if (!connections.has(route)) {
+        connections.set(route, []);
     }
+    connections.get(route).push(ws);
 
-    console.log("Received:", message); // Now it should be a string!
-
-    try {
-      const parsedMessage = JSON.parse(message);
-
-      // If the message contains game data, update gameData
-      if (parsedMessage.game) {
-        gameData = parsedMessage.game;
-        console.log("Game Data updated:", gameData);
-      }
-
-      // If the message contains headset data, update unitData
-      if (parsedMessage.headsetSerialNo && parsedMessage.battery !== undefined) {
-        updateUnitData(parsedMessage.headsetSerialNo, parsedMessage.battery);
-      }
-
-    } catch (error) {
-      console.error("Error parsing message:", error);
-    }
-
-    // Broadcast the message to all connected clients including the sender
-    wss.clients.forEach((client) => {
-      if (client.readyState === WebSocket.OPEN) {
-        client.send(message); // Send the message to the sender as well as other clients
-      }
+    ws.on('message', (message) => {
+        console.log(`Received message on ${route}:`, message);
+        // Handle messages if needed
     });
-  });
 
-  // Handle WebSocket disconnection
-  ws.on("close", () => {
-    console.log("A user disconnected");
-  });
+    ws.on('close', () => {
+        console.log(`WebSocket connection closed for route: ${route}`);
+        const clients = connections.get(route) || [];
+        connections.set(route, clients.filter((client) => client !== ws));
+    });
 });
 
-// Serve a simple HTML file (optional)
-app.get("/", (req, res) => {
-  res.sendFile(__dirname + "/index.html");
-});
-
-// Start the HTTP server on port 3000
+// Start the server
 server.listen(3000, () => {
-  console.log("Server is running on http://localhost:3000");
+    console.log("WebSocket server running on port 3000");
 });
